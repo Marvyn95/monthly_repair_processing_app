@@ -165,8 +165,8 @@ with sale_entry:
             work_book.save(repairs_file_path)
 
             st.success("Repair entry submitted!")
-            st.session_state.repair_rows = 5
             st.session_state.clear()
+            st.session_state.repair_rows = 5
 
     col1, col2, col3, col4, col5 = st.columns([1, 1, 1, 1, 1])
     
@@ -196,7 +196,13 @@ with sales:
     today_str = datetime.date.today().strftime("%d-%m-%Y")
     sheet_name=f"{today_str}"
 
-    repairs_excel_df = pd.read_excel(file_path, sheet_name=sheet_name)
+    try:
+        repairs_excel_df = pd.read_excel(file_path, sheet_name=sheet_name)
+    except ValueError:
+        empty_df = pd.DataFrame(columns=["No.", "Area", "Vehicle ID", "Date", "Description", "Cost (ugx)"])
+        with pd.ExcelWriter(file_path, engine="openpyxl", mode="a", if_sheet_exists="overlay") as writer:
+            empty_df.to_excel(writer, index=False, sheet_name=sheet_name)
+        repairs_excel_df = empty_df.copy()
 
     edited_df = st.data_editor(
         repairs_excel_df,
@@ -300,7 +306,7 @@ with sales:
             subj = doc.add_paragraph(f"SUBJECT:\tREQUEST FOR UGSHS {total_cost:,} /= "
                                     f"({num2words(int(total_cost), lang='en').upper()} UGANDA SHILLINGS ONLY) "
                                     f"TO BE PAID TO A&B MOTORCYCLE GARAGE "
-                                    f"FOR MOTORCYCLE MAINTENANCE SERVICES PROVIDED FOR NO. {total_vehicles} (TWO) MOTORCYCLES.")
+                                    f"FOR MOTORCYCLE MAINTENANCE SERVICES PROVIDED FOR NO. {total_vehicles} ({num2words(total_vehicles, lang='en').upper()}) MOTORCYCLES.")
             subj.runs[0].bold = True
             # Underline the subject line
             for run in subj.runs:
@@ -458,5 +464,30 @@ with sales:
                 combined_df = pd.concat([existing_df, repair_df], ignore_index=True)
                 combined_df.drop_duplicates(subset=["Area", "Vehicle ID", "Date", "Descriptions", "Total Cost (ugx)"], inplace=True)
                 combined_df.to_excel(writer, index=False)
+
+            work_book = load_workbook(history_file)
+            ws = work_book.active
+
+            thin_border = Border(
+                left=Side(style='thin'),
+                right=Side(style='thin'),
+                top=Side(style='thin'),
+                bottom=Side(style='thin')
+            )
+            col_max_width = {}
+
+            for row in ws.iter_rows():
+                for cell in row:
+                    cell.alignment = Alignment(wrap_text=True, vertical="top")
+                    cell.border = thin_border
+                    val = str(cell.value) if cell.value is not None else ""
+                    col_letter = cell.column_letter
+                    col_max_width[col_letter] = max(col_max_width.get(col_letter, 0), len(val))
+
+            # Set column widths based on max content length
+            for col_letter, max_len in col_max_width.items():
+                ws.column_dimensions[col_letter].width = max(15, min(max_len + 3, 60))  # reasonable min/max
+
+            work_book.save(history_file)
             st.success("Vehicle repair history updated!")
 
